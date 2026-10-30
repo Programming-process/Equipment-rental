@@ -3,28 +3,47 @@ import MobileOpsApp from "./MobileOpsApp";
 
 const fleet = [
   {
-    title: "Скардийн трактор",
-    detail: "Байгуулах талбайд хурдан, үр ашигтай ажилладаг",
+    title: "Өрмийн машин D45",
+    detail: "Хүнд нөхцөлд өрөмдлөгийн ажил гүйцэтгэнэ",
+    image: "/assets/1cab8.png",
+    badge: "Түрээстэй",
+    price: "Үнийн санал",
+  },
+  {
+    title: "Өрмийн машин Terra-Bore R150",
+    detail: "Талбайн хүнд даацын өрөмдлөгийн ажилд",
+    image: "/assets/bb5fa.png",
+    badge: "Бэлэн",
+    price: "Үнийн санал",
+  },
+  {
+    title: "Генератор 150 кВА",
+    detail: "Талбайн цахилгаан хангамжид тохиромжтой",
+    image: "/assets/generator-150kva.jpg",
+    badge: "Бэлэн",
+    price: "Үнийн санал",
+  },
+  {
+    title: "Бетон зуурагч 8м³",
+    detail: "Бетон зуурмагийг талбайд жигд бэлтгэнэ",
+    image: "/assets/concrete-mixer-8m3.jpg",
+    badge: "Анхаарах",
+    price: "Үнийн санал",
+  },
+  {
+    title: "Бага оврын экскаватор",
+    detail: "Нарийн зайд ухах, тэгшлэх ажилд зориулагдсан",
+    image: "/assets/mini-excavator.jpg",
+    badge: "Засварт",
+    price: "Үнийн санал",
+  },
+  {
+    title: "Гар багаж / багц",
+    detail: "Өдөр тутмын угсралт, засварын ажилд",
     image:
       "https://images.unsplash.com/photo-1581092918056-0c4c3acd3789?auto=format&fit=crop&w=900&q=80",
-    badge: "Тооцоолсон",
-    price: "$150/өдөр",
-  },
-  {
-    title: "Өндөрт ажиллах машин",
-    detail: "Засвар, суурилуулалтанд аюулгүй хандалт",
-    image:
-      "https://images.unsplash.com/photo-1504307651254-35680f356dfd?auto=format&fit=crop&w=900&q=80",
-    badge: "Шинэ бараа",
-    price: "$220/өдөр",
-  },
-  {
-    title: "Газрын хөдөлгүүр",
-    detail: "Хүнд даацтай, ухах, тэгшлэх ажилд зориулагдсан",
-    image:
-      "https://images.unsplash.com/photo-1504307651254-35680f356dfd?auto=format&fit=crop&w=900&q=80",
-    badge: "Бэлэн байна",
-    price: "$540/өдөр",
+    badge: "Бэлэн",
+    price: "Үнийн санал",
   },
 ];
 
@@ -174,9 +193,11 @@ export default function App() {
             <div className="grid gap-4 md:grid-cols-3">
               {fleet.map((item) => (
                 <article key={item.title} className="overflow-hidden rounded-[22px] border border-[#e6e8e2] bg-[#f6f7f1]">
-                  <div
-                    className="h-40 bg-cover bg-center"
-                    style={{ backgroundImage: `url('${item.image}')` }}
+                  <img
+                    className="h-40 w-full object-cover object-center"
+                    src={item.image}
+                    alt={item.title}
+                    loading="lazy"
                   />
                   <div className="p-4">
                     <div className="mb-2 flex items-center justify-between gap-2">
