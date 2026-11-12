@@ -78,6 +78,18 @@ const schema = `
     user_id uuid NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
     expires_at timestamptz NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS telemetry_readings (
+    id bigserial PRIMARY KEY,
+    equipment_id text NOT NULL,
+    recorded_at timestamptz NOT NULL,
+    temperature real,
+    vibration real,
+    rpm real,
+    pressure real,
+    source text NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS telemetry_readings_equipment_time
+    ON telemetry_readings (equipment_id, recorded_at DESC);
 `
 
 const seedRows = async (client, table, rows) => {
@@ -320,6 +332,50 @@ export const createDatabaseStore = async ({
       await pool.query("DELETE FROM app_sessions WHERE token_hash = $1", [
         hashToken(token),
       ])
+    },
+    insertTelemetry: async (readings) => {
+      await pool.query(
+        `INSERT INTO telemetry_readings
+           (equipment_id, recorded_at, temperature, vibration, rpm, pressure, source)
+         SELECT * FROM unnest($1::text[], $2::timestamptz[], $3::real[], $4::real[], $5::real[], $6::real[], $7::text[])`,
+        [
+          readings.map((r) => r.equipmentId),
+          readings.map((r) => r.recordedAt),
+          readings.map((r) => r.temperature),
+          readings.map((r) => r.vibration),
+          readings.map((r) => r.rpm),
+          readings.map((r) => r.pressure),
+          readings.map((r) => r.source),
+        ],
+      )
+    },
+    getRecentTelemetry: async (perEquipment) => {
+      const { rows } = await pool.query(
+        `SELECT equipment_id, recorded_at, temperature, vibration, rpm, pressure, source
+           FROM (
+             SELECT *, row_number() OVER (PARTITION BY equipment_id ORDER BY recorded_at DESC) AS rn
+               FROM telemetry_readings
+              WHERE recorded_at > now() - interval '10 minutes'
+           ) recent
+          WHERE rn <= $1
+          ORDER BY recorded_at`,
+        [perEquipment],
+      )
+      return rows.map((row) => ({
+        equipmentId: row.equipment_id,
+        recordedAt: row.recorded_at.toISOString(),
+        temperature: row.temperature,
+        vibration: row.vibration,
+        rpm: row.rpm,
+        pressure: row.pressure,
+        source: row.source,
+      }))
+    },
+    pruneTelemetry: async (hours) => {
+      await pool.query(
+        "DELETE FROM telemetry_readings WHERE recorded_at < now() - make_interval(hours => $1)",
+        [hours],
+      )
     },
   }
 }

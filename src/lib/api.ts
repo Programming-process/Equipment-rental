@@ -127,3 +127,79 @@ export const api = {
       body: JSON.stringify(payload),
     }),
 };
+
+export type TelemetryLevel = 'ok' | 'warn' | 'critical';
+
+export type TelemetryReading = {
+  equipmentId: string;
+  recordedAt: string;
+  temperature: number | null;
+  vibration: number | null;
+  rpm: number | null;
+  pressure: number | null;
+  source: 'simulator' | 'device';
+  level: TelemetryLevel;
+};
+
+export type SiteMap = {
+  width: number;
+  height: number;
+  zones: { id: string; label: string; x: number; y: number; w: number; h: number; kind: string }[];
+  roads: { x: number; y: number; w: number; h: number }[];
+  gate: { x: number; y: number; label: string };
+};
+
+export type TelemetrySnapshot = {
+  siteMap: SiteMap;
+  thresholds: Record<'temperature' | 'vibration' | 'pressure', { warn: number; critical: number }>;
+  positions: Record<string, { x: number; y: number }>;
+  history: Record<string, TelemetryReading[]>;
+  serverTime: string;
+};
+
+export type TelemetryEvent =
+  | { type: 'snapshot'; data: TelemetrySnapshot }
+  | { type: 'telemetry'; data: TelemetryReading[] }
+  | { type: 'expired' };
+
+export class StreamAuthError extends Error {}
+
+// EventSource нь Authorization толгой илгээж чадахгүй тул fetch-ээр SSE уншина.
+export const streamTelemetry = async (
+  onEvent: (event: TelemetryEvent) => void,
+  signal: AbortSignal,
+) => {
+  const response = await fetch('/api/telemetry/stream', {
+    headers: sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {},
+    signal,
+  });
+  if (response.status === 401 || response.status === 403) {
+    const body = await response.json().catch(() => null);
+    throw new StreamAuthError(body?.message ?? 'Нэвтрэх шаардлагатай.');
+  }
+  if (!response.ok || !response.body) {
+    throw new Error('Телеметрийн холболт амжилтгүй.');
+  }
+
+  const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+  let buffer = '';
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) return;
+    buffer += value;
+    let boundary: number;
+    while ((boundary = buffer.indexOf('\n\n')) !== -1) {
+      const chunk = buffer.slice(0, boundary);
+      buffer = buffer.slice(boundary + 2);
+      let event = 'message';
+      let data = '';
+      for (const line of chunk.split('\n')) {
+        if (line.startsWith('event: ')) event = line.slice(7);
+        else if (line.startsWith('data: ')) data += line.slice(6);
+      }
+      if (event === 'snapshot') onEvent({ type: 'snapshot', data: JSON.parse(data) });
+      else if (event === 'telemetry') onEvent({ type: 'telemetry', data: JSON.parse(data) });
+      else if (event === 'expired') onEvent({ type: 'expired' });
+    }
+  }
+};

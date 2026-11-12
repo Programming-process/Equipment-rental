@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url"
 import cors from "cors"
 import express from "express"
 import { createDatabaseStore } from "./db.mjs"
+import { createTelemetryHub, deviceKeyMatches } from "./telemetry.mjs"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -161,6 +162,12 @@ const database = await createDatabaseStore({
   notifications,
   supportTeam,
 })
+const telemetryHub = createTelemetryHub({
+  database,
+  equipmentIds: equipment.map((item) => item.id),
+})
+await telemetryHub.start()
+
 const getBearerToken = (req) => {
   const authorization = req.get("authorization") ?? ""
   return authorization.startsWith("Bearer ") ? authorization.slice(7) : null
@@ -354,6 +361,57 @@ app.post("/api/support", requireAuthentication, async (req, res, next) => {
   } catch (error) {
     return next(error)
   }
+})
+
+// Бодит цагийн телеметр: админ, менежер, фиксер харна.
+const telemetryRoles = new Set(["admin", "manager", "fixer"])
+
+app.get("/api/telemetry/stream", requireAuthentication, (req, res) => {
+  if (!telemetryRoles.has(req.user.role)) {
+    return res.status(403).json({ message: "Телеметр харах эрхгүй байна." })
+  }
+
+  res.set({
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no",
+  })
+  res.flushHeaders()
+
+  const token = getBearerToken(req)
+  const unsubscribe = telemetryHub.subscribe(res)
+  // Session хугацаа дуусвал холболтыг хаана.
+  const sessionCheck = setInterval(async () => {
+    try {
+      if (!(await database.getSession(token))) {
+        res.write("event: expired\ndata: {}\n\n")
+        res.end()
+      }
+    } catch (error) {
+      console.error("Telemetry session check failed:", error)
+    }
+  }, 30_000)
+
+  req.on("close", () => {
+    clearInterval(sessionCheck)
+    unsubscribe()
+  })
+})
+
+// IoT төхөөрөмж өгөгдөл илгээх: X-Device-Key толгой шаардлагатай.
+app.post("/api/telemetry", (req, res) => {
+  if (!process.env.TELEMETRY_INGEST_KEY) {
+    return res
+      .status(503)
+      .json({ message: "TELEMETRY_INGEST_KEY тохируулагдаагүй байна." })
+  }
+  if (!deviceKeyMatches(req.get("x-device-key"))) {
+    return res.status(401).json({ message: "Төхөөрөмжийн түлхүүр буруу." })
+  }
+  const error = telemetryHub.ingest(req.body)
+  if (error) return res.status(400).json({ message: error })
+  return res.status(202).json({ ok: true })
 })
 
 app.use((error, req, res, next) => {

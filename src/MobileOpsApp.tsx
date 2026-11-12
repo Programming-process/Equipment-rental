@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { api, type DashboardResponse, type UserRole } from "./lib/api";
+import LiveSiteMonitor from "./LiveSiteMonitor";
 import MobileLogin from "./MobileLogin";
 
 const assetPathPrefix = "/assets";
@@ -346,6 +347,10 @@ function HomeScreen({
             </Card>
           ))}
         </div>
+
+        {role !== "renter" && (
+          <LiveSiteMonitor equipment={dashboard.equipment} />
+        )}
 
         <button
           className="rounded-[10px] border border-[#e7847e] bg-[#fff3f2] p-3 text-left"
