@@ -1573,5 +1573,5 @@ export default function MobileOpsApp({
     notifications: <NotificationsScreen dashboard={dashboard} onNavigate={navigate} />,
   };
 
-  return screens[screen];
+  return <>{screens[screen] ?? screens.home}</>;
 }
