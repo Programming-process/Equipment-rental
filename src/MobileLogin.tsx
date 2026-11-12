@@ -1,81 +1,46 @@
 import { useState, type FormEvent } from "react";
-import { api } from "./lib/api";
+import { api, type Session, type User } from "./lib/api";
 
 const assetPathPrefix = "/assets";
 const imgScanLine = `${assetPathPrefix}/cc583.svg`;
 const imgDot = `${assetPathPrefix}/mobile-510a9.svg`;
-const imgHardHat = `${assetPathPrefix}/9627e.svg`;
-const imgBriefcaseBusiness = `${assetPathPrefix}/7a1ea.svg`;
 const imgEyeOff = `${assetPathPrefix}/bd00d.svg`;
 const imgArrowRight = `${assetPathPrefix}/18191.svg`;
 const imgShieldCheck = `${assetPathPrefix}/afd3d.svg`;
 
-type Role = "manager" | "fixer" | "renter";
-
-const roles = [
-  {
-    id: "manager" as const,
-    title: "Менежер",
-    description: "Тайлан, төлөв, захиалга, удирдлага",
-    icon: imgBriefcaseBusiness,
-  },
-  {
-    id: "fixer" as const,
-    title: "Фиксер",
-    description: "Төхөөрөмж, QR, засвар, telemetry",
-    icon: imgHardHat,
-  },
-  {
-    id: "renter" as const,
-    title: "Түрээслэгч",
-    description: "Гэрээ, төлбөр, тоног төхөөрөмжийн хяналт",
-    icon: imgShieldCheck,
-  },
-];
-
 export default function MobileLogin({
   onLogin,
 }: {
-  onLogin?: (result: {
-    message: string;
-    user: {
-      id: string;
-      role: Role;
-      phone: string;
-      name: string;
-      company: string;
-    };
-    session: {
-      token: string;
-      role: Role;
-      expiresAt: string;
-    };
-  }) => void;
+  onLogin?: (result: { message: string; user: User; session: Session }) => void;
 }) {
-  const [role, setRole] = useState<Role>("manager");
-  const [phone, setPhone] = useState("9912 8044");
-  const [code, setCode] = useState("123456");
-  const [showCode, setShowCode] = useState(false);
+  const [mode, setMode] = useState<"login" | "register">("login");
+  const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
+  const [company, setCompany] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError("");
+    if (mode === "register" && password !== confirmPassword) {
+      setError("Нууц үгүүд таарахгүй байна.");
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
-      const result = await api.login({
-        role,
-        phone: phone.replace(/\D/g, ""),
-        code,
-      });
-
+      const result =
+        mode === "register"
+          ? await api.register({ email, name, company, password })
+          : await api.login({ email, password });
       onLogin?.(result);
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Нэвтрэх үед алдаа гарлаа.",
-      );
+      setError(err instanceof Error ? err.message : "Хүсэлт амжилтгүй боллоо.");
     } finally {
       setIsSubmitting(false);
     }
@@ -129,82 +94,112 @@ export default function MobileLogin({
         onSubmit={handleSubmit}
       >
         <h2 className="w-full font-['Inter:Bold'] text-[20px] font-bold text-[#14212a]">
-          Хэрэглэгчийн төрөл
+          {mode === "login" ? "Нэвтрэх" : "Шинэ хэрэглэгч бүртгүүлэх"}
         </h2>
         <p className="w-full font-['Inter:Regular'] text-[12px] leading-[1.45] text-[#667784]">
-          Өөрийн ажлын урсгалд тохирох эрхээр үргэлжлүүлнэ үү.
+          {mode === "login"
+            ? "Бүртгэлтэй имэйл болон нууц үгээ оруулна уу."
+            : "Түрээслэгчийн бүртгэл үүсгэнэ. Админы эрхийг бүртгэлээр сонгох боломжгүй."}
         </p>
 
-        <div className="flex w-full shrink-0 items-start gap-[10px]">
-          {roles.map((item) => {
-            const selected = role === item.id;
+        {mode === "register" && (
+          <>
+            <label className="flex w-full flex-col gap-[6px]">
+              <span className="font-['Inter:Bold'] text-[11px] font-bold text-[#667784]">
+                ОВОГ, НЭР
+              </span>
+              <input
+                autoComplete="name"
+                className="h-[48px] w-full rounded-[6px] border border-[#d6dfe4] px-[13px] text-[13px] outline-none focus:border-[#1677a8]"
+                maxLength={100}
+                minLength={2}
+                onChange={(event) => setName(event.target.value)}
+                required
+                value={name}
+              />
+            </label>
+            <label className="flex w-full flex-col gap-[6px]">
+              <span className="font-['Inter:Bold'] text-[11px] font-bold text-[#667784]">
+                БАЙГУУЛЛАГА
+              </span>
+              <input
+                autoComplete="organization"
+                className="h-[48px] w-full rounded-[6px] border border-[#d6dfe4] px-[13px] text-[13px] outline-none focus:border-[#1677a8]"
+                maxLength={150}
+                minLength={2}
+                onChange={(event) => setCompany(event.target.value)}
+                required
+                value={company}
+              />
+            </label>
+          </>
+        )}
 
-            return (
-              <button
-                aria-pressed={selected}
-                className={`flex h-[104px] min-w-0 flex-1 flex-col items-start gap-[8px] overflow-hidden rounded-[10px] p-[12px] text-left transition-colors ${
-                  selected
-                    ? "border-2 border-[#1677a8] bg-[#e2f1f7]"
-                    : "border border-[#d6dfe4] bg-[#f6f8f9]"
-                }`}
-                key={item.id}
-                onClick={() => setRole(item.id)}
-                type="button"
-              >
-                <img alt="" className="size-[22px] shrink-0" src={item.icon} />
-                <span className="font-['Inter:Bold'] text-[13px] font-bold whitespace-nowrap text-[#14212a]">
-                  {item.title}
-                </span>
-                <span className="w-full font-['Inter:Regular'] text-[10px] leading-[1.3] text-[#667784]">
-                  {item.description}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-
-        <label className="flex w-full shrink-0 flex-col items-start gap-[6px]">
-          <span className="font-['Inter:Bold'] text-[11px] font-bold whitespace-nowrap text-[#667784]">
-            УТАСНЫ ДУГААР
+        <label className="flex w-full flex-col gap-[6px]">
+          <span className="font-['Inter:Bold'] text-[11px] font-bold text-[#667784]">
+            ИМЭЙЛ
           </span>
-          <span className="flex h-[48px] w-full items-center gap-[10px] overflow-hidden rounded-[6px] border border-[#d6dfe4] px-[13px] focus-within:border-[#1677a8]">
-            <span className="shrink-0 font-['Roboto_Mono:Bold'] text-[13px] font-bold whitespace-nowrap text-[#14212a]">
-              +976
-            </span>
-            <span className="h-[20px] w-px shrink-0 bg-[#d6dfe4]" />
-            <input
-              aria-label="Утасны дугаар"
-              className="min-w-0 flex-1 bg-transparent font-['Roboto_Mono:Regular'] text-[13px] text-[#14212a] outline-none"
-              inputMode="numeric"
-              onChange={(event) => setPhone(event.target.value)}
-              value={phone}
-            />
-          </span>
+          <input
+            autoComplete="email"
+            className="h-[48px] w-full rounded-[6px] border border-[#d6dfe4] px-[13px] text-[13px] outline-none focus:border-[#1677a8]"
+            maxLength={254}
+            onChange={(event) => setEmail(event.target.value)}
+            required
+            type="email"
+            value={email}
+          />
         </label>
 
-        <label className="flex w-full shrink-0 flex-col items-start gap-[6px]">
-          <span className="font-['Inter:Bold'] text-[11px] font-bold whitespace-nowrap text-[#667784]">
-            НЭВТРЭХ КОД
+        <label className="flex w-full flex-col gap-[6px]">
+          <span className="font-['Inter:Bold'] text-[11px] font-bold text-[#667784]">
+            НУУЦ ҮГ
           </span>
-          <span className="flex h-[48px] w-full items-center justify-between overflow-hidden rounded-[6px] border border-[#d6dfe4] px-[13px] focus-within:border-[#1677a8]">
+          <span className="flex h-[48px] w-full items-center justify-between rounded-[6px] border border-[#d6dfe4] px-[13px] focus-within:border-[#1677a8]">
             <input
-              aria-label="Нэвтрэх код"
-              className="min-w-0 flex-1 bg-transparent font-['Roboto_Mono:Regular'] text-[18px] tracking-[0.14em] text-[#14212a] outline-none"
-              inputMode="numeric"
-              onChange={(event) => setCode(event.target.value)}
-              type={showCode ? "text" : "password"}
-              value={code}
+              autoComplete={
+                mode === "login" ? "current-password" : "new-password"
+              }
+              className="min-w-0 flex-1 bg-transparent text-[13px] text-[#14212a] outline-none"
+              maxLength={128}
+              minLength={12}
+              onChange={(event) => setPassword(event.target.value)}
+              required
+              type={showPassword ? "text" : "password"}
+              value={password}
             />
             <button
-              aria-label={showCode ? "Код нуух" : "Код харуулах"}
+              aria-label={showPassword ? "Нууц үг нуух" : "Нууц үг харуулах"}
               className="flex size-[32px] shrink-0 items-center justify-end"
-              onClick={() => setShowCode((visible) => !visible)}
+              onClick={() => setShowPassword((visible) => !visible)}
               type="button"
             >
               <img alt="" className="size-[18px]" src={imgEyeOff} />
             </button>
           </span>
+          {mode === "register" && (
+            <span className="text-[10px] text-[#74838d]">
+              12-оос доошгүй тэмдэгт
+            </span>
+          )}
         </label>
+
+        {mode === "register" && (
+          <label className="flex w-full flex-col gap-[6px]">
+            <span className="font-['Inter:Bold'] text-[11px] font-bold text-[#667784]">
+              НУУЦ ҮГ ДАХИН ОРУУЛАХ
+            </span>
+            <input
+              autoComplete="new-password"
+              className="h-[48px] w-full rounded-[6px] border border-[#d6dfe4] px-[13px] text-[13px] outline-none focus:border-[#1677a8]"
+              maxLength={128}
+              minLength={12}
+              onChange={(event) => setConfirmPassword(event.target.value)}
+              required
+              type={showPassword ? "text" : "password"}
+              value={confirmPassword}
+            />
+          </label>
+        )}
 
         {error && (
           <p className="w-full rounded-[8px] bg-[#fff1f0] px-[10px] py-[8px] font-['Inter:Regular'] text-[10px] text-[#cc524c]">
@@ -220,13 +215,26 @@ export default function MobileLogin({
           <img alt="" className="size-[20px]" src={imgArrowRight} />
           <span className="font-['Inter:Bold'] text-[14px] font-bold whitespace-nowrap text-white">
             {isSubmitting
-              ? "Нэвтэрч байна..."
-              : role === "manager"
-                ? "Менежерээр нэвтрэх"
-                : role === "fixer"
-                  ? "Фиксерээр нэвтрэх"
-                  : "Түрээслэгчээр нэвтрэх"}
+              ? "Хүлээнэ үү..."
+              : mode === "login"
+                ? "Нэвтрэх"
+                : "Бүртгэл үүсгэх"}
           </span>
+        </button>
+
+        <button
+          className="w-full py-1 text-[12px] font-semibold text-[#1677a8]"
+          onClick={() => {
+            setMode((current) =>
+              current === "login" ? "register" : "login",
+            );
+            setError("");
+          }}
+          type="button"
+        >
+          {mode === "login"
+            ? "Шинэ хэрэглэгч үү? Бүртгүүлэх"
+            : "Бүртгэлтэй юу? Нэвтрэх"}
         </button>
 
         <div className="flex w-full items-center justify-center gap-[7px]">

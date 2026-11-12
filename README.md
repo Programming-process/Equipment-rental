@@ -5,7 +5,7 @@ A React + Vite frontend paired with an Express API for an equipment operations d
 - website dashboard for desktop
 - phone/mobile operations flow
 - role-based login flows
-- backend mock API for auth and dashboard data
+- backend API for auth and dashboard data, with optional PostgreSQL persistence
 
 ## Tech stack
 
@@ -14,6 +14,7 @@ A React + Vite frontend paired with an Express API for an equipment operations d
 - Tailwind CSS v4
 - Express 4
 - Node.js
+- PostgreSQL (optional for local development; required for persistent deployment data)
 
 ## Local development
 
@@ -94,7 +95,15 @@ PORT=10000
 NODE_ENV=production
 ```
 
+Set `DATABASE_URL` to your PostgreSQL connection URL through the environment or a local `.env` file. Do not commit credentials.
+
 Render injects the port automatically in some cases, but this app is configured to run on port `10000` for Docker compatibility.
+
+### PostgreSQL setup
+
+The repository does not include a running database. Create a PostgreSQL database in Render, then set the web service's `DATABASE_URL` environment variable to that database's **internal** connection URL. Locally, use a PostgreSQL URL you control. Do not commit the URL or credentials.
+
+On startup, the API creates its tables and inserts the demo dashboard records if those tables are empty. With `DATABASE_URL` unset, the API continues to serve the in-memory demo data; the health endpoint reports `database: "not_configured"`. When configured, dashboard, equipment, alert, notification, and support-request data are read from/written to PostgreSQL.
 
 ## Project structure
 
@@ -109,6 +118,5 @@ render.yaml         # Render deployment configuration
 
 ## Notes
 
-- This is a mock operations app, not a production database-backed system.
-- The backend stores data in memory and resets when the container restarts.
-- For production, swap the in-memory data source for Postgres, MongoDB, or another persistent store.
+- Login remains a demo flow using code `123456`; it is not production authentication.
+- The initial dashboard content is sample data and is inserted only when its corresponding PostgreSQL tables are empty.

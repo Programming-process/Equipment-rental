@@ -6,16 +6,17 @@
   "scripts": {
     "dev": "concurrently -k \"npm run dev:server\" \"npm run dev:web\"",
     "dev:web": "vite",
-    "dev:server": "node server/index.mjs",
+    "dev:server": "node --env-file-if-exists=.env server/index.mjs",
     "build": "vite build",
-    "start": "node server/index.mjs",
+    "start": "node --env-file-if-exists=.env server/index.mjs",
     "preview": "vite preview",
     "format": "oxfmt",
-    "test": "node --test server/api.test.mjs"
+    "test": "node --env-file-if-exists=.env --test server/api.test.mjs"
   },
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.21.2",
+    "pg": "^8.23.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },

@@ -1,5 +1,14 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { api, type DashboardResponse, type UserRole } from "./lib/api";
+import {
+  api,
+  loadStoredAuth,
+  setUnauthorizedHandler,
+  type AuthResponse,
+  type DashboardResponse,
+  type UserRole,
+} from "./lib/api";
+import BookingCalendar from "./BookingCalendar";
+import LiveSiteMonitor from "./LiveSiteMonitor";
 import MobileLogin from "./MobileLogin";
 
 const assetPathPrefix = "/assets";
@@ -270,8 +279,22 @@ function HomeScreen({
   role: UserRole;
 }) {
   const summary = dashboard.summary;
-  const roleLabel = role === "manager" ? "Менежер" : role === "fixer" ? "Фиксер" : "Түрээслэгч";
-  const roleGreeting = role === "manager" ? "Тайлангийн тойм" : role === "fixer" ? "Ажлын тасалбар" : "Түрээслэх бүртгэл";
+  const roleLabel =
+    role === "admin"
+      ? "Админ"
+      : role === "manager"
+        ? "Менежер"
+        : role === "fixer"
+          ? "Фиксер"
+          : "Түрээслэгч";
+  const roleGreeting =
+    role === "admin"
+      ? "Админы самбар"
+      : role === "manager"
+        ? "Тайлангийн тойм"
+        : role === "fixer"
+          ? "Ажлын тасалбар"
+          : "Түрээслэх бүртгэл";
 
   return (
     <MobilePage current="home" onNavigate={onNavigate}>
@@ -332,6 +355,10 @@ function HomeScreen({
             </Card>
           ))}
         </div>
+
+        {role !== "renter" && (
+          <LiveSiteMonitor equipment={dashboard.equipment} />
+        )}
 
         <button
           className="rounded-[10px] border border-[#e7847e] bg-[#fff3f2] p-3 text-left"
@@ -396,12 +423,19 @@ function HomeScreen({
           </button>
           <button
             className="flex h-[64px] items-center gap-3 rounded-[10px] bg-white p-3 text-left"
-            onClick={() => onNavigate(role === "fixer" ? "support" : "notifications")}
+            onClick={() =>
+              onNavigate(
+                role === "fixer" ? "support" : "calendar",
+              )
+            }
             type="button"
           >
-            <Icon className="size-6" src={icons.send} />
+            <Icon
+              className="size-6"
+              src={role === "fixer" ? icons.send : icons.calendar}
+            />
             <span className="font-['Inter:Bold'] text-[11px] font-bold">
-              {role === "fixer" ? "Тусламж" : "Мэдэгдэл"}
+              {role === "fixer" ? "Тусламж" : "Захиалгын хуанли"}
             </span>
           </button>
         </div>
@@ -412,11 +446,13 @@ function HomeScreen({
           </p>
           <div className="mt-2 flex items-center justify-between">
             <span className="font-['Inter:Bold'] text-[12px] font-bold text-[#14212a]">
-              {role === "manager"
-                ? "Бүртгэл, тайлан, даалгавар"
-                : role === "fixer"
-                  ? "Засвар, QR, telemetry"
-                  : "Гэрээ, төлбөр, түрээсийн хяналт"}
+              {role === "admin"
+                ? "Хэрэглэгч, түрээс, тайлангийн удирдлага"
+                : role === "manager"
+                  ? "Бүртгэл, тайлан, даалгавар"
+                  : role === "fixer"
+                    ? "Засвар, QR, telemetry"
+                    : "Гэрээ, төлбөр, түрээсийн хяналт"}
             </span>
             <button
               className="rounded-full bg-[#1677a8] px-2.5 py-1 text-[9px] font-bold text-white"
@@ -629,103 +665,21 @@ function DetailScreen({
 }
 
 function CalendarScreen({
+  dashboard,
   onNavigate,
 }: {
+  dashboard: DashboardResponse;
   onNavigate: (screen: Screen) => void;
 }) {
-  const [selectedDay, setSelectedDay] = useState("09");
-
   return (
     <MobilePage current="calendar" onNavigate={onNavigate}>
       <Header
-        onBack={() => onNavigate("detail")}
-        subtitle="DRL-UB-0247 · Өрмийн машин"
+        onBack={() => onNavigate("home")}
+        subtitle="Сул өдрөө сонгоод захиална уу"
         title="Захиалгын хуанли"
       />
       <div className="flex flex-1 flex-col gap-3 p-3">
-        <Card className="p-3">
-          <div className="flex items-center justify-between">
-            <button className="rounded bg-[#f0f4f6] px-2 py-1" type="button">
-              ‹
-            </button>
-            <p className="font-['Inter:Bold'] text-[12px] font-bold">
-              2026 оны 10-р сар
-            </p>
-            <button className="rounded bg-[#f0f4f6] px-2 py-1" type="button">
-              ›
-            </button>
-          </div>
-          <div className="mt-3 grid grid-cols-7 gap-1">
-            {["05", "06", "07", "08", "09", "10", "11"].map((day, index) => {
-              const isSelected = selectedDay === day;
-
-              return (
-                <button
-                  className={`rounded-lg py-3 text-center ${
-                    isSelected
-                      ? "bg-[#1677a8] text-white"
-                      : index > 1 && index < 4
-                        ? "bg-[#fff1dc] text-[#b46b0f]"
-                        : "bg-[#f4f7f8]"
-                  }`}
-                  key={day}
-                  onClick={() => setSelectedDay(day)}
-                  type="button"
-                >
-                  <span className="block text-[7px]">
-                    {["ДАВ", "МЯГ", "ЛХА", "ПҮР", "БАА", "БЯМ", "НЯМ"][index]}
-                  </span>
-                  <span className="mt-1 block font-['Roboto_Mono:Bold'] text-[12px] font-bold">
-                    {day}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </Card>
-        <Card className="p-3">
-          <div className="flex items-center justify-between">
-            <h2 className="font-['Inter:Bold'] text-[11px] font-bold">
-              Сонгосон хугацаа
-            </h2>
-            <StatusPill tone="green">3 өдөр</StatusPill>
-          </div>
-          <div className="mt-3 flex items-center justify-between rounded-lg bg-[#f3f7f8] p-3">
-            <div>
-              <p className="text-[8px] text-[#7c8992]">ЭХЛЭХ</p>
-              <p className="font-['Roboto_Mono:Bold'] text-[13px] font-bold">
-                10.{selectedDay} · 08:00
-              </p>
-            </div>
-            <span className="text-[#1677a8]">→</span>
-            <div className="text-right">
-              <p className="text-[8px] text-[#7c8992]">ДУУСАХ</p>
-              <p className="font-['Roboto_Mono:Bold'] text-[13px] font-bold">
-                10.{String(Number(selectedDay) + 1).padStart(2, "0")} · 18:00
-              </p>
-            </div>
-          </div>
-        </Card>
-        <Card className="p-3">
-          <h2 className="font-['Inter:Bold'] text-[11px] font-bold">
-            Захиалгын мэдээлэл
-          </h2>
-          <div className="mt-3 space-y-2">
-            <div className="rounded-lg border border-[#dce4e8] p-3 text-[10px]">
-              Монкон ХХК · Нарны зам, Блок B
-            </div>
-            <div className="rounded-lg border border-[#dce4e8] p-3 text-[10px] text-[#71808a]">
-              Ажлын тайлбар, тэмдэглэл...
-            </div>
-          </div>
-        </Card>
-        <button
-          className="mt-auto h-[48px] rounded-[9px] bg-[#1677a8] font-['Inter:Bold'] text-[12px] font-bold text-white"
-          onClick={() => onNavigate("checkout")}
-          type="button"
-        >
-          Захиалга баталгаажуулах
-        </button>
+        <BookingCalendar equipment={dashboard.equipment} />
       </div>
     </MobilePage>
   );
@@ -1437,22 +1391,18 @@ export default function MobileOpsApp({
   onBackToWebsite?: () => void;
 } = {}) {
   const [screen, setScreen] = useState<Screen>(getScreenFromHash);
-  const [session, setSession] = useState<{
-    message: string;
-    user: {
-      id: string;
-      role: UserRole;
-      phone: string;
-      name: string;
-      company: string;
-    };
-    session: {
-      token: string;
-      role: UserRole;
-      expiresAt: string;
-    };
-  } | null>(null);
+  // Refresh хийхэд нэвтрэлт хадгалагдана (tab хаагдах хүртэл).
+  const [session, setSession] = useState<AuthResponse | null>(loadStoredAuth);
   const [dashboard, setDashboard] = useState<DashboardResponse>(fallbackDashboard);
+
+  // Сервер дээр session-ий хугацаа дууссан бол нэвтрэх хуудас руу буцаана.
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      setSession(null);
+      setDashboard(fallbackDashboard);
+    });
+    return () => setUnauthorizedHandler(null);
+  }, []);
 
   useEffect(() => {
     const handleHashChange = () => setScreen(getScreenFromHash());
@@ -1495,33 +1445,24 @@ export default function MobileOpsApp({
     setScreen(nextScreen);
   };
 
-  const handleLogin = (result: {
-    message: string;
-    user: {
-      id: string;
-      role: UserRole;
-      phone: string;
-      name: string;
-      company: string;
-    };
-    session: {
-      token: string;
-      role: UserRole;
-      expiresAt: string;
-    };
-  }) => {
+  const handleLogin = (result: AuthResponse) => {
     setSession(result);
-    navigate("home");
+    // Нэвтрэхээс өмнө тодорхой дэлгэц (жишээ нь хуанли) рүү орох гэж байсан бол тэнд нь үлдээнэ.
+    if (screen === "login") navigate("home");
   };
 
   const handleSignOut = () => {
+    void api.logout().catch((error) => {
+      console.error("Could not revoke session:", error);
+    });
     setSession(null);
     setDashboard(fallbackDashboard);
     window.location.hash = "login";
     setScreen("login");
   };
 
-  if (screen === "login") {
+  // Нэвтрээгүй үед (эсвэл хуудсыг refresh хийсний дараа) аль ч дэлгэцийг харуулахгүй.
+  if (screen === "login" || !session) {
     return <MobileLogin onLogin={handleLogin} />;
   }
 
@@ -1537,7 +1478,7 @@ export default function MobileOpsApp({
     ),
     equipment: <EquipmentScreen dashboard={dashboard} onNavigate={navigate} />,
     detail: <DetailScreen dashboard={dashboard} onNavigate={navigate} />,
-    calendar: <CalendarScreen onNavigate={navigate} />,
+    calendar: <CalendarScreen dashboard={dashboard} onNavigate={navigate} />,
     scanner: <ScannerScreen onNavigate={navigate} />,
     checkout: <CheckoutScreen onNavigate={navigate} />,
     checkin: <CheckinScreen onNavigate={navigate} />,
@@ -1547,5 +1488,5 @@ export default function MobileOpsApp({
     notifications: <NotificationsScreen dashboard={dashboard} onNavigate={navigate} />,
   };
 
-  return screens[screen];
+  return <>{screens[screen] ?? screens.home}</>;
 }
