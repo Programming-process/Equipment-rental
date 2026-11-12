@@ -90,7 +90,46 @@ const schema = `
   );
   CREATE INDEX IF NOT EXISTS telemetry_readings_equipment_time
     ON telemetry_readings (equipment_id, recorded_at DESC);
+  CREATE TABLE IF NOT EXISTS bookings (
+    id uuid PRIMARY KEY,
+    equipment_id text NOT NULL REFERENCES equipment(id),
+    user_id uuid REFERENCES app_users(id) ON DELETE SET NULL,
+    tenant text NOT NULL,
+    start_date date NOT NULL,
+    end_date date NOT NULL,
+    note text NOT NULL DEFAULT '',
+    status text NOT NULL DEFAULT 'confirmed' CHECK (status IN ('confirmed', 'cancelled')),
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CHECK (end_date >= start_date)
+  );
+  CREATE INDEX IF NOT EXISTS bookings_equipment_dates
+    ON bookings (equipment_id, start_date, end_date) WHERE status = 'confirmed';
 `
+
+// Жишээ захиалгууд (өнөөдрөөс хойш хэдэн хоног). Хүснэгт хоосон үед л үүснэ.
+const demoBookings = [
+  ["DRL-UB-0247", "Хөх Тэнгэр ХХК", 2, 5],
+  ["DRL-UB-0247", "Говь зам ХХК", 12, 14],
+  ["GEN-0162", "Монкон ХХК", 1, 3],
+  ["MIX-4993", "Улаанбаатар бетон", 6, 9],
+  ["EXC-0914", "Говь зам ХХК", 4, 8],
+]
+
+const bookingColumns = `id, equipment_id, user_id, tenant, note, status, created_at,
+  to_char(start_date, 'YYYY-MM-DD') AS start_date,
+  to_char(end_date, 'YYYY-MM-DD') AS end_date`
+
+const toBooking = (row, viewerId) => ({
+  id: row.id,
+  equipmentId: row.equipment_id,
+  startDate: row.start_date,
+  endDate: row.end_date,
+  mine: Boolean(viewerId) && row.user_id === viewerId,
+  tenant: row.tenant,
+  note: row.note,
+  status: row.status,
+  createdAt: row.created_at.toISOString(),
+})
 
 const seedRows = async (client, table, rows) => {
   for (const [position, row] of rows.entries()) {
@@ -167,6 +206,17 @@ export const createDatabaseStore = async ({
       "INSERT INTO dashboard_settings (key, data) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING",
       ["summary", dashboard.summary],
     )
+    const { rows: bookingCount } = await client.query(
+      "SELECT count(*)::int AS n FROM bookings",
+    )
+    if (bookingCount[0].n === 0) {
+      for (const [equipmentId, tenant, from, to] of demoBookings) {
+        await client.query(
+          "INSERT INTO bookings (id, equipment_id, tenant, start_date, end_date) VALUES ($1, $2, $3, current_date + $4::int, current_date + $5::int)",
+          [randomUUID(), equipmentId, tenant, from, to],
+        )
+      }
+    }
     const adminEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase()
     const adminPassword = process.env.ADMIN_PASSWORD
     if (Boolean(adminEmail) !== Boolean(adminPassword)) {
@@ -370,6 +420,72 @@ export const createDatabaseStore = async ({
         pressure: row.pressure,
         source: row.source,
       }))
+    },
+    getBookedRanges: async (equipmentId, from, to, viewerId) => {
+      const { rows } = await pool.query(
+        `SELECT ${bookingColumns} FROM bookings
+          WHERE equipment_id = $1 AND status = 'confirmed'
+            AND start_date <= $3::date AND end_date >= $2::date
+          ORDER BY start_date`,
+        [equipmentId, from, to],
+      )
+      return rows.map((row) => toBooking(row, viewerId))
+    },
+    getUserBookings: async (userId) => {
+      const { rows } = await pool.query(
+        `SELECT ${bookingColumns} FROM bookings
+          WHERE user_id = $1 AND status = 'confirmed' AND end_date >= current_date
+          ORDER BY start_date`,
+        [userId],
+      )
+      return rows.map((row) => toBooking(row, userId))
+    },
+    // Давхардлыг транзакц + advisory lock-оор хамгаална: нэг төхөөрөмжид
+    // зэрэг ирсэн хоёр хүсэлт дараалж шалгагдана.
+    createBooking: async ({ equipmentId, user, startDate, endDate, note }) => {
+      const client = await pool.connect()
+      try {
+        await client.query("BEGIN")
+        await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
+          `booking:${equipmentId}`,
+        ])
+        const { rows: conflicts } = await client.query(
+          `SELECT to_char(start_date, 'YYYY-MM-DD') AS start_date,
+                  to_char(end_date, 'YYYY-MM-DD') AS end_date
+             FROM bookings
+            WHERE equipment_id = $1 AND status = 'confirmed'
+              AND start_date <= $3::date AND end_date >= $2::date
+            ORDER BY start_date LIMIT 1`,
+          [equipmentId, startDate, endDate],
+        )
+        if (conflicts[0]) {
+          await client.query("ROLLBACK")
+          return {
+            conflict: { startDate: conflicts[0].start_date, endDate: conflicts[0].end_date },
+          }
+        }
+        const { rows } = await client.query(
+          `INSERT INTO bookings (id, equipment_id, user_id, tenant, start_date, end_date, note)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           RETURNING ${bookingColumns}`,
+          [randomUUID(), equipmentId, user.id, user.company || user.name, startDate, endDate, note],
+        )
+        await client.query("COMMIT")
+        return { booking: toBooking(rows[0], user.id) }
+      } catch (error) {
+        await client.query("ROLLBACK").catch(() => {})
+        throw error
+      } finally {
+        client.release()
+      }
+    },
+    cancelBooking: async (id, userId) => {
+      const { rowCount } = await pool.query(
+        `UPDATE bookings SET status = 'cancelled'
+          WHERE id = $1 AND user_id = $2 AND status = 'confirmed' AND start_date > current_date`,
+        [id, userId],
+      )
+      return rowCount > 0
     },
     pruneTelemetry: async (hours) => {
       await pool.query(

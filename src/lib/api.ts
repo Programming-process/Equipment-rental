@@ -67,6 +67,47 @@ export type DashboardResponse = {
 
 let sessionToken: string | null = null;
 
+// Нэвтрэлтийг tab хаагдах хүртэл хадгална (sessionStorage нь tab хаагдахад автоматаар цэвэрлэгдэнэ).
+const storageKey = 'eq.auth';
+let onUnauthorized: (() => void) | null = null;
+
+export const setUnauthorizedHandler = (handler: (() => void) | null) => {
+  onUnauthorized = handler;
+};
+
+const clearStoredAuth = () => {
+  try {
+    sessionStorage.removeItem(storageKey);
+  } catch {
+    // Хувийн цонх зэрэгт storage ашиглах боломжгүй байж болно.
+  }
+};
+
+// Хадгалсан сервер талын session хүчингүй болсон үед дуудагдана.
+const handleUnauthorized = () => {
+  if (!sessionToken) return;
+  sessionToken = null;
+  clearStoredAuth();
+  onUnauthorized?.();
+};
+
+export const loadStoredAuth = (): AuthResponse | null => {
+  try {
+    const raw = sessionStorage.getItem(storageKey);
+    if (!raw) return null;
+    const auth = JSON.parse(raw) as AuthResponse;
+    if (!auth?.session?.token || Date.parse(auth.session.expiresAt) <= Date.now()) {
+      clearStoredAuth();
+      return null;
+    }
+    sessionToken = auth.session.token;
+    return auth;
+  } catch {
+    clearStoredAuth();
+    return null;
+  }
+};
+
 export const setSessionToken = (token: string | null) => {
   sessionToken = token;
 };
@@ -81,6 +122,8 @@ const request = async <T>(path: string, init?: RequestInit): Promise<T> => {
     ...init,
   });
 
+  if (response.status === 401) handleUnauthorized();
+
   if (!response.ok) {
     const body = await response.json().catch(() => null);
     throw new Error(body?.message ?? 'Хүсэлт амжилтгүй боллоо.');
@@ -89,11 +132,16 @@ const request = async <T>(path: string, init?: RequestInit): Promise<T> => {
   return response.json() as Promise<T>;
 };
 
-type AuthResponse = { message: string; user: User; session: Session };
+export type AuthResponse = { message: string; user: User; session: Session };
 
 const saveSession = async (result: Promise<AuthResponse>) => {
   const auth = await result;
   setSessionToken(auth.session.token);
+  try {
+    sessionStorage.setItem(storageKey, JSON.stringify(auth));
+  } catch {
+    // Storage ашиглах боломжгүй бол зөвхөн санах ойд үлдэнэ.
+  }
   return auth;
 };
 
@@ -114,6 +162,7 @@ export const api = {
       await request<{ message: string }>('/auth/logout', { method: 'POST' });
     } finally {
       setSessionToken(null);
+      clearStoredAuth();
     }
   },
   getDashboard: () => request<DashboardResponse>('/dashboard'),
@@ -173,6 +222,7 @@ export const streamTelemetry = async (
     headers: sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {},
     signal,
   });
+  if (response.status === 401) handleUnauthorized();
   if (response.status === 401 || response.status === 403) {
     const body = await response.json().catch(() => null);
     throw new StreamAuthError(body?.message ?? 'Нэвтрэх шаардлагатай.');
@@ -202,4 +252,45 @@ export const streamTelemetry = async (
       else if (event === 'expired') onEvent({ type: 'expired' });
     }
   }
+};
+
+export type BookedRange = {
+  id?: string;
+  startDate: string;
+  endDate: string;
+  mine: boolean;
+  tenant?: string;
+  note?: string;
+};
+
+export type Availability = {
+  equipmentId: string;
+  from: string;
+  to: string;
+  today: string;
+  booked: BookedRange[];
+};
+
+export type Booking = {
+  id: string;
+  equipmentId: string;
+  startDate: string;
+  endDate: string;
+  mine: boolean;
+  tenant: string;
+  note: string;
+  status: 'confirmed' | 'cancelled';
+  createdAt: string;
+};
+
+export const bookingApi = {
+  getAvailability: (equipmentId: string, from: string, to: string) =>
+    request<Availability>(
+      `/equipment/${encodeURIComponent(equipmentId)}/availability?from=${from}&to=${to}`,
+    ),
+  getMine: () => request<Booking[]>('/bookings/mine'),
+  create: (payload: { equipmentId: string; startDate: string; endDate: string; note: string }) =>
+    request<Booking>('/bookings', { method: 'POST', body: JSON.stringify(payload) }),
+  cancel: (id: string) =>
+    request<{ ok: boolean }>(`/bookings/${encodeURIComponent(id)}`, { method: 'DELETE' }),
 };

@@ -61,10 +61,26 @@ const stats = [
 ];
 
 export default function App() {
-  const [route, setRoute] = useState<"dashboard" | "mobile">("dashboard");
+  // URL-д #calendar гэх мэт апп-ын дэлгэц байвал (refresh, хуваалцсан холбоос) шууд апп-ыг нээнэ.
+  const [route, setRoute] = useState<"dashboard" | "mobile">(() =>
+    window.location.hash.length > 1 ? "mobile" : "dashboard",
+  );
+
+  // Вэбсайтаас захиалгын хуанли руу шууд орох (нэвтрээгүй бол эхлээд нэвтрэх хуудас гарна).
+  const openBookingCalendar = () => {
+    window.location.hash = "calendar";
+    setRoute("mobile");
+  };
 
   if (route === "mobile") {
-    return <MobileOpsApp onBackToWebsite={() => setRoute("dashboard")} />;
+    return (
+      <MobileOpsApp
+        onBackToWebsite={() => {
+          history.replaceState(null, "", window.location.pathname);
+          setRoute("dashboard");
+        }}
+      />
+    );
   }
 
   return (
@@ -131,12 +147,14 @@ export default function App() {
               <div className="mt-7 flex flex-wrap items-center gap-3">
                 <button
                   className="rounded-full bg-[#f5b91d] px-5 py-3 text-sm font-bold text-[#0c1117] transition hover:brightness-105"
+                  onClick={openBookingCalendar}
                   type="button"
                 >
                   Тоног захиалах
                 </button>
                 <button
                   className="rounded-full border border-white/20 bg-white/5 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/10"
+                  onClick={openBookingCalendar}
                   type="button"
                 >
                   Захиалга харах

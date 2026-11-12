@@ -363,6 +363,130 @@ app.post("/api/support", requireAuthentication, async (req, res, next) => {
   }
 })
 
+// ---- Захиалгын хуанли ----
+const isoDate = /^\d{4}-\d{2}-\d{2}$/
+const parseDay = (value) => {
+  if (typeof value !== "string" || !isoDate.test(value)) return null
+  const date = new Date(`${value}T00:00:00Z`)
+  return Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value
+    ? null
+    : date
+}
+const dayDiff = (a, b) => Math.round((b - a) / 86_400_000)
+// Улаанбаатарын цагаар өнөөдрийн огноо.
+const todayInUlaanbaatar = () =>
+  new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Ulaanbaatar" }).format(new Date())
+const staffRoles = new Set(["admin", "manager", "fixer"])
+const maxBookingDays = 60
+
+app.get(
+  "/api/equipment/:id/availability",
+  requireAuthentication,
+  async (req, res, next) => {
+    const from = parseDay(req.query.from)
+    const to = parseDay(req.query.to)
+    if (!from || !to || to < from || dayDiff(from, to) > 93) {
+      return res
+        .status(400)
+        .json({ message: "from, to огноог YYYY-MM-DD хэлбэрээр (93 хоногоос ихгүй) өгнө үү." })
+    }
+    try {
+      const item = await database.getEquipmentById(req.params.id)
+      if (!item) return res.status(404).json({ message: "Төхөөрөмж олдсонгүй" })
+      const ranges = await database.getBookedRanges(
+        req.params.id,
+        req.query.from,
+        req.query.to,
+        req.user.id,
+      )
+      const showDetails = staffRoles.has(req.user.role)
+      return res.json({
+        equipmentId: req.params.id,
+        from: req.query.from,
+        to: req.query.to,
+        today: todayInUlaanbaatar(),
+        // Түрээслэгч бусдын захиалгын нэр, тэмдэглэлийг харахгүй.
+        booked: ranges.map(({ id, startDate, endDate, mine, tenant, note }) =>
+          showDetails || mine
+            ? { id, startDate, endDate, mine, tenant, note }
+            : { startDate, endDate, mine },
+        ),
+      })
+    } catch (error) {
+      return next(error)
+    }
+  },
+)
+
+app.get("/api/bookings/mine", requireAuthentication, async (req, res, next) => {
+  try {
+    res.json(await database.getUserBookings(req.user.id))
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.post("/api/bookings", requireAuthentication, async (req, res, next) => {
+  const { equipmentId, startDate, endDate, note = "" } = req.body ?? {}
+  const start = parseDay(startDate)
+  const end = parseDay(endDate)
+  if (typeof equipmentId !== "string" || !start || !end) {
+    return res.status(400).json({ message: "Төхөөрөмж болон огноогоо сонгоно уу." })
+  }
+  if (end < start) {
+    return res.status(400).json({ message: "Дуусах огноо эхлэх огнооноос өмнө байна." })
+  }
+  if (startDate < todayInUlaanbaatar()) {
+    return res.status(400).json({ message: "Өнгөрсөн өдрөөр захиалах боломжгүй." })
+  }
+  if (dayDiff(start, end) + 1 > maxBookingDays) {
+    return res
+      .status(400)
+      .json({ message: `Нэг захиалга ${maxBookingDays} хоногоос хэтрэхгүй.` })
+  }
+  if (typeof note !== "string" || note.length > 500) {
+    return res.status(400).json({ message: "Тэмдэглэл 500 тэмдэгтээс хэтрэхгүй." })
+  }
+
+  try {
+    const item = await database.getEquipmentById(equipmentId)
+    if (!item) return res.status(404).json({ message: "Төхөөрөмж олдсонгүй" })
+    const result = await database.createBooking({
+      equipmentId,
+      user: req.user,
+      startDate,
+      endDate,
+      note: note.trim(),
+    })
+    if (result.conflict) {
+      return res.status(409).json({
+        message: `Сонгосон хугацаа давхцаж байна: ${result.conflict.startDate} – ${result.conflict.endDate} аль хэдийн захиалагдсан.`,
+        conflict: result.conflict,
+      })
+    }
+    return res.status(201).json(result.booking)
+  } catch (error) {
+    return next(error)
+  }
+})
+
+app.delete("/api/bookings/:id", requireAuthentication, async (req, res, next) => {
+  if (!/^[0-9a-f-]{36}$/i.test(req.params.id)) {
+    return res.status(404).json({ message: "Захиалга олдсонгүй." })
+  }
+  try {
+    const cancelled = await database.cancelBooking(req.params.id, req.user.id)
+    if (!cancelled) {
+      return res
+        .status(404)
+        .json({ message: "Цуцлах боломжтой захиалга олдсонгүй (эхэлсэн захиалгыг цуцлах боломжгүй)." })
+    }
+    return res.json({ ok: true })
+  } catch (error) {
+    return next(error)
+  }
+})
+
 // Бодит цагийн телеметр: админ, менежер, фиксер харна.
 const telemetryRoles = new Set(["admin", "manager", "fixer"])
 
